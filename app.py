@@ -1,206 +1,183 @@
+import os
 import joblib
 import streamlit as st
 
-# Page configuration
+# Page Configuration
 st.set_page_config(
-    page_title="Scam SMS Shield | AI Fraud Defense Portal",
-    page_icon="🛡️",
+    page_title="Scam SMS Shield | Fraud Defense Portal",
     layout="centered",
 )
 
-# Load model and components
-model = joblib.load("model.joblib")
-vec, clf = model.steps[0][1], model.steps[1][1]
+# Load Model Artifacts with Error Handling
+@st.cache_resource
+def load_model_pipeline():
+    if not os.path.exists("model.joblib"):
+        return None
+    return joblib.load("model.joblib")
 
-# Enhanced Scam Taxonomy with Independent Verification Playbooks
-TYPES = {
+model = load_model_pipeline()
+
+if model is None:
+    st.error("System Error: 'model.joblib' file not found in the repository. Please verify your file upload.")
+    st.stop()
+
+# Safely extract vectorizer and classifier from scikit-learn pipeline
+try:
+    if hasattr(model, "named_steps"):
+        steps = list(model.named_steps.values())
+        vec = steps[0]
+        clf = steps[1]
+    else:
+        vec = model.steps[0][1]
+        clf = model.steps[1][1]
+except Exception:
+    # Fallback default indexing
+    vec = model.steps[0][1]
+    clf = model.steps[1][1]
+
+# Institutional Taxonomies & Independent Verification Playbooks
+THREAT_TYPES = {
     "Fake KYC / Bank Block": {
-        "words": ["kyc", "blocked", "account", "pan"],
-        "tip": (
-            "Banks NEVER ask for KYC updates or passwords through SMS links."
-        ),
-        "steps": [
-            "Open your bank's OFFICIAL app directly (do not tap any link).",
-            (
-                "Call the customer service number printed on the back of your"
-                " bank debit card."
-            ),
-            "Visit your local bank branch to confirm your account status.",
+        "keywords": ["kyc", "blocked", "account", "pan", "update", "verify"],
+        "advisory": "Financial institutions never request KYC updates, PINs, or credentials via direct SMS hyperlinks.",
+        "verification_steps": [
+            "Open your bank's official proprietary mobile application directly.",
+            "Contact customer support using the verified telephone number printed on your debit card.",
+            "Visit your designated local branch to review account restrictions.",
         ],
     },
     "UPI / Refund Trap": {
-        "words": ["upi", "refund", "pin", "cashback"],
-        "tip": (
-            "Golden Rule: You NEVER enter a UPI PIN to receive money or"
-            " refunds."
-        ),
-        "steps": [
-            "Check your bank balance directly inside Google Pay / PhonePe.",
-            "If someone sent a request, REJECT it immediately.",
-            "Never share OTPs or accept collect requests from strangers.",
+        "keywords": ["upi", "refund", "pin", "cashback", "receive", "reward"],
+        "advisory": "A UPI PIN is exclusively required for authorizing outbound debit transactions, never for receiving funds.",
+        "verification_steps": [
+            "Inspect your ledger balance directly within your trusted payment gateway app.",
+            "Reject and block all unsolicited collect requests or payment prompts.",
+            "Never disclose your UPI PIN or virtual payment address credentials.",
         ],
     },
-    "Electricity / Utility Cut Threat": {
-        "words": ["electricity", "disconnected", "power", "bill"],
-        "tip": (
-            "Electricity boards do NOT send personal mobile numbers for bill"
-            " payments."
-        ),
-        "steps": [
-            "Log in to your official state electricity portal or payment app.",
-            "Check your actual bill status under the Utility tab in UPI apps.",
-            (
-                "Ignore threats of immediate disconnection within hours via"
-                " SMS."
-            ),
+    "Utility Disconnection Threat": {
+        "keywords": ["electricity", "disconnected", "power", "bill", "current", "eb"],
+        "advisory": "State utility boards do not issue final service disconnection notices from personal mobile numbers.",
+        "verification_steps": [
+            "Access your state electricity board's official web portal.",
+            "Verify your monthly billing status through official utility aggregator apps.",
+            "Disregard urgent messaging demanding immediate mobile wallet transfers.",
         ],
     },
     "Courier / Customs Duty Trap": {
-        "words": ["parcel", "courier", "customs", "delivery"],
-        "tip": (
-            "Customs and postal services never demand payments via personal"
-            " UPI handles."
-        ),
-        "steps": [
-            "Go to the official website (e.g., India Post / BlueDart).",
-            "Manually enter your tracking code on the official site.",
-            "Refuse delivery if the sender demands unexpected cash on delivery.",
+        "keywords": ["parcel", "courier", "customs", "delivery", "shipment"],
+        "advisory": "Postal and customs authorities do not levy clearance fees via personal digital wallet handles.",
+        "verification_steps": [
+            "Navigate directly to the official logistics provider tracking portal.",
+            "Manually input your tracking reference on the authenticated web domain.",
+            "Refuse consignments demanding cash-on-delivery settlements via unverified channels.",
         ],
     },
-    "Lottery / Job Scam": {
-        "words": [
-            "lottery",
-            "prize",
-            "won",
-            "winner",
-            "job",
-            "earn",
-            "registration",
-        ],
-        "tip": (
-            "Genuine employers and contests never ask for upfront payments or"
-            " registration fees."
-        ),
-        "steps": [
-            "Verify the company on LinkedIn or official career pages.",
-            "Never pay money for receiving a job offer or prize.",
+    "Employment / Prize Fraud": {
+        "keywords": ["lottery", "prize", "won", "winner", "job", "earn", "registration", "task"],
+        "advisory": "Legitimate employers and official contests do not mandate upfront registration fees.",
+        "verification_steps": [
+            "Authenticate corporate entities via verified professional networks.",
+            "Decline financial transfers requested as a prerequisite for employment or reward disbursement.",
         ],
     },
 }
 
-
 def explain(msg, top=4):
-    """Return the words that pushed this message toward 'scam'."""
-    c = vec.transform([msg]).multiply(clf.coef_[0]).tocoo()
-    pairs = sorted(zip(c.data, c.col), reverse=True)[:top]
-    names = vec.get_feature_names_out()
-    return [names[j] for v, j in pairs if v > 0]
+    """Extract top feature coefficients pushing the text toward malicious classification."""
+    try:
+        c = vec.transform([msg]).multiply(clf.coef_[0]).tocoo()
+        pairs = sorted(zip(c.data, c.col), reverse=True)[:top]
+        names = vec.get_feature_names_out()
+        return [names[j] for v, j in pairs if v > 0]
+    except Exception:
+        return []
 
+# --- UI LAYOUT ---
 
-# --- APP HEADER ---
-st.title("🛡️ Scam SMS Shield")
-st.caption(
-    "**AI Fraud Defense & Verification Portal** | Aligned with UN SDG 16"
+st.title("Scam SMS Shield")
+st.markdown("**Enterprise Fraud Detection & Verification Portal** | Framework Aligned with UN SDG 16")
+st.markdown("---")
+
+st.subheader("Message Analysis Console")
+sms_input = st.text_area(
+    "SMS Content Input",
+    placeholder="Paste the complete text message content for analysis...",
+    height=120,
 )
 
-# --- INPUT SECTION ---
-st.markdown("### 📩 Paste Suspicious SMS Below")
-msg = st.text_area(
-    "SMS Message Text:",
-    placeholder=(
-        "E.g. Dear customer your SBI account is blocked. Update KYC now at"
-        " http://bit.ly/123"
-    ),
-    height=100,
-)
+col_action, col_spacer = st.columns([1, 3])
+with col_action:
+    analyze_btn = st.button("Run Diagnostics", type="primary")
 
-if st.button("🛡️ Analyze & Verify Message", type="primary") and msg.strip():
-    p = model.predict_proba([msg])[0][1]
+if analyze_btn and sms_input.strip():
+    try:
+        probability = model.predict_proba([sms_input])[0][1]
+    except Exception as e:
+        st.error(f"Prediction execution failed: {e}")
+        st.stop()
 
     st.markdown("---")
-    st.subheader("📊 Analysis Summary")
+    st.subheader("Diagnostic Results")
 
-    # --- VERDICT DISPLAY ---
-    if p >= 0.5:
-        st.error(f"🚨 **HIGH RISK DETECTED** (Risk Score: {p * 100:.1f}%)")
+    if probability >= 0.5:
+        # High Risk Classification Output
+        st.error(f"**Classification: HIGH RISK THREAT DETECTED** (Confidence: {probability * 100:.2f}%)")
 
-        # Risk Metrics
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Threat Probability", f"{p * 100:.1f}%")
-        m2.metric("Threat Level", "CRITICAL" if p > 0.8 else "MODERATE")
-        m3.metric("Action Required", "DO NOT CLICK LINKS")
+        metric_1, metric_2, metric_3 = st.columns(3)
+        metric_1.metric("Risk Probability", f"{probability * 100:.1f}%")
+        metric_2.metric("Threat Category", "Malicious Smishing")
+        metric_3.metric("Recommended Action", "Isolate & Block")
 
-        # Explainable AI Output
-        flagged_words = explain(msg)
-        if flagged_words:
-            st.warning(
-                "🔑 **Why was this flagged? (Explainable AI Trigger Words):** "
-                + ", ".join([f"`{w}`" for w in flagged_words])
-            )
+        drivers = explain(sms_input)
+        if drivers:
+            st.markdown("**Primary Linguistic Risk Indicators:**")
+            st.code(", ".join(drivers), language=None)
 
-        # Matched Category & Action Plan
-        low = msg.lower()
-        matched_data = None
-        matched_name = ""
-
-        for name, data in TYPES.items():
-            if any(w in low for w in data["words"]):
-                matched_data = data
-                matched_name = name
+        # Pattern Matching for Independent Verification Playbook
+        text_lower = sms_input.lower()
+        matched_profile = None
+        for category, details in THREAT_TYPES.items():
+            if any(kw in text_lower for kw in details["keywords"]):
+                matched_profile = (category, details)
                 break
 
         st.markdown("---")
-        st.subheader("🔍 Independent Safe Verification Steps")
+        st.subheader("Independent Verification Protocol")
 
-        if matched_data:
-            st.info(
-                f"⚠️ **Detected Pattern:** {matched_name}\n\n💡"
-                f" **Core Safety Rule:** {matched_data['tip']}"
-            )
-            st.markdown("**Follow these steps to safely verify without risk:**")
-            for step in matched_data["steps"]:
-                st.markdown(f"- ✅ {step}")
+        if matched_profile:
+            cat_name, cat_data = matched_profile
+            st.info(f"**Identified Vector:** {cat_name}\n\n**Advisory:** {cat_data['advisory']}")
+            st.markdown("**Mandatory Verification Steps:**")
+            for step in cat_data["verification_steps"]:
+                st.markdown(f"* {step}")
         else:
-            st.info(
-                "⚠️ **Unclassified Risk Pattern Detected.** Avoid interacting"
-                " with links or unverified numbers."
-            )
-            st.markdown("**General Safe Verification Steps:**")
-            st.markdown(
-                "- ✅ Check official sender IDs (e.g., `AX-HDFCBK` vs regular"
-                " 10-digit mobile numbers)."
-            )
-            st.markdown(
-                "- ✅ Search the official helpline number of the organization"
-                " on Google."
-            )
+            st.info("**Vector Classification:** Unidentified Fraud Pattern. Treat with extreme caution.")
+            st.markdown("**General Verification Steps:**")
+            st.markdown("* Cross-reference sender identification strings with official organizational directories.")
+            st.markdown("* Never interact with embedded shortened URIs (e.g., bit.ly, tinyurl).")
 
-        # Action Protocols
         st.markdown("---")
-        st.subheader("🚨 Immediate Action Protocol")
-        st.markdown(
-            "1. **Clicked a link?** Disconnect internet immediately and change"
-            " banking passwords."
-        )
-        st.markdown(
-            "2. **Lost money?** Call **1930** (National Cybercrime Helpline)"
-            " within the first 1-2 hours (Golden Hour)."
-        )
-        st.markdown(
-            "3. **Report Cybercrime:** Submit details at"
-            " [cybercrime.gov.in](https://cybercrime.gov.in)."
-        )
+        st.subheader("Incident Response Protocol")
+        st.markdown("1. **Credential Exposure:** If links were accessed, immediately terminate active sessions and update security keys.")
+        st.markdown("2. **Financial Loss:** Report incidents to the National Cybercrime Helpline (**1930**) within the active response window.")
+        st.markdown("3. **Formal Filing:** Register grievances via the official portal at [cybercrime.gov.in](https://cybercrime.gov.in).")
 
     else:
-        st.success(f"✅ **LIKELY SAFE** (Safety Score: {(1 - p) * 100:.1f}%)")
-        st.markdown("This message does not contain common financial fraud indicators.")
-        st.markdown("**Good Practices:** Always ensure official bank SMS come from official headers (like `VK-SBIIN` or `AD-HDFCBK`).")
+        # Benign Classification Output
+        st.success(f"**Classification: LOW RISK / BENIGN** (Confidence: {(1 - probability) * 100:.2f}%)")
+        st.markdown("The submitted text does not exhibit known statistical markers associated with financial fraud.")
+        st.markdown("**Standard Hygiene:** Ensure official organizational communications originate from authenticated enterprise sender identifiers.")
 
-    # Developer / Viva Inspector
-    with st.expander("🛠️ Technical Model Inspection (For Evaluators)"):
+    # Technical Model Telemetry Expander
+    with st.expander("Model Telemetry & Feature Inspector"):
         st.json({
-            "algorithm": "Logistic Regression with TF-IDF Vectorization",
-            "scam_probability": float(p),
-            "safe_probability": float(1 - p),
-            "feature_coefficients": explain(msg, top=6),
+            "vectorizer": "TF-IDF (Unigram & Bigram Configuration)",
+            "estimator": "Optimized Logistic Regression Classifier",
+            "calculated_probability_malicious": float(probability),
+            "calculated_probability_benign": float(1 - probability),
+            "feature_coefficients": explain(sms_input, top=6),
         })
+
+st.markdown("---")
+st.markdown("<div style='text-align: center; color: gray; font-size: 0.85em;'>Academic Capstone Project | Machine Learning & Applied AI</div>", unsafe_allow_html=True)
