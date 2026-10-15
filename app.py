@@ -470,6 +470,10 @@ try:
 except FileNotFoundError:
     st.error("The model file model.joblib was not found. Add it to the same folder as app.py and reload.")
     st.stop()
+except Exception as e:  # e.g. the model was saved with a different scikit-learn version
+    st.error("The model file could not be loaded. Re-save it in Colab and upload it again.")
+    st.code(f"{type(e).__name__}: {e}")
+    st.stop()
 
 tab_check, tab_how, tab_types, tab_about = st.tabs(["Check a message", "How it works", "Common scams", "About and limits"])
 
